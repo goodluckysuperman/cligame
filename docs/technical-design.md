@@ -1,132 +1,133 @@
-# Technical Design：cligame 第一版
+# Technical Design：Threshold Protocol / 门限协议
 
 ## 1. 架构概览
 
-项目采用 `src` 布局，把 CLI、故事引擎、渲染、数据模型和内容资源分开，避免首版逻辑继续堆在单文件入口中。
+项目从分支小说模型升级为“终端会话状态机”。核心不再是节点跳转，而是：
+- GameState
+- 命令分发
+- 模块状态变化
+- 文件解锁与文本污染
+- 协议执行
+- 前台背景音乐与结局音频切换
 
-## 2. 模块职责
+## 2. 核心模块
 
 ### `src/cligame/cli.py`
-- 解析 CLI 参数。
-- 分发 `play` 和 `list-stories` 命令。
-- 负责选择内置故事或外部故事文件。
+负责启动第一夜会话、处理 `play` 和 `list-stories` 命令，并在前台阶段启动循环背景音乐。
 
 ### `src/cligame/game.py`
-- 驱动主游戏循环。
-- 负责节点切换、读取用户输入。
-- 在到达结局时切换到专用结局演出页，而不是立刻退出。
+包含 `FirstNightEngine`：
+- 保存 `GameState`
+- 解析命令
+- 推进时间
+- 修改模块状态
+- 管理任务阶段
+- 检查协议可用性
 
 ### `src/cligame/models.py`
-- 定义 `Story`、`StoryNode`、`Choice`。
-- 结局节点支持 `ending_art` 元数据。
-
-### `src/cligame/story_loader.py`
-- 从 JSON 载入故事。
-- 校验节点、起点、跳转目标是否合法。
-- 枚举内置故事。
+定义：
+- `ModuleStatus`
+- `ModuleDefinition`
+- `TaskDefinition`
+- `ProtocolDefinition`
+- `RelayMessage`
+- `GameState`
 
 ### `src/cligame/renderer.py`
-- 使用 `rich` 渲染标题、正文、选项和结局页。
-- 负责从文本资源加载终端图案并展示。
+负责：
+- 开机 HUD
+- 输出命令结果
+- 提示当前任务与常用命令
+- 显示结局图案与结局文本
 
 ### `src/cligame/audio.py`
-- 提供音频接口抽象。
-- 默认保留 `NoopAudioPlayer`。
-- 在 Windows 下提供共享结束音效的播放实现。
+提供统一音频抽象：
+- `start_bgm()` 用于前台循环背景音乐
+- `play_ending()` 用于结局音效
+- `stop_bgm()` 用于清理当前播放进程
 
-## 3. 内容组织
+在 Windows 下使用 PowerShell + `System.Windows.Media.MediaPlayer` 实现实际播放。
 
-### 内置故事
+## 3. 第一夜内容组织
 
-内置故事位于 `src/cligame/content/stories/`，每个故事使用一个 JSON 文件。
+### `src/cligame/first_night_data.py`
+集中定义：
+- 模块
+- 任务
+- 协议
+- 前辈消息
+- 远程消息
 
-当前首个故事：
-- `src/cligame/content/stories/first_story.json`
+### `src/cligame/content/first_night/files/`
+存放首批可读文件：
+- archive
+- audio
+- camera
+- auth
+- protocols
 
-### 语料库
+### `src/cligame/content/audio/`
+- `bgm/background_loop.mp3`：前台循环背景音乐
+- `endings/shared_ending.mp3`：当前所有结局共用的结束音效
 
-- 根目录 `semantic-library.md`：原始创作语料。
-- `src/cligame/content/corpus/semantic-library.md`：包内参考说明。
+## 4. 音频策略
 
-### 音频与图案资源
+### 前台阶段
+- 在 CLI 主循环开始前启动 `background_loop.mp3`
+- 使用循环播放逻辑保持 BGM 持续存在
 
-- `src/cligame/content/audio/endings/shared_ending.mp3`：当前所有结局共用的结束音效
-- `src/cligame/content/art/endings/*.txt`：结局图案资源
+### 结局阶段
+- 停止 BGM
+- 切换为 `shared_ending.mp3`
+- 结局页结束后统一 stop
 
-原则：
-- 语料负责提供风格和句式灵感。
-- 可玩故事必须使用结构化 JSON 单独维护。
-- 终端图案与音频作为独立资源文件维护，不直接硬编码到故事文本中。
+### 静音模式
+- `--mute` 同时关闭 BGM 与 ending 音效
 
-## 4. 故事 JSON 格式
+## 5. 玩法循环
 
-```json
-{
-  "id": "first_story",
-  "title": "故事标题",
-  "intro": "序章文本",
-  "start_node": "opening",
-  "nodes": [
-    {
-      "id": "opening",
-      "text": "场景文本",
-      "choices": [
-        { "label": "选择一", "next": "node_a", "tag": "branch_a" }
-      ]
-    },
-    {
-      "id": "ending_a",
-      "text": "结局前文本",
-      "ending_title": "结局名称",
-      "ending_art": "ending_a",
-      "ending": "结局正文"
-    }
-  ]
-}
-```
+第一夜玩法循环：
+1. 开场事故面板
+2. 前辈接入并教学
+3. 玩家执行调查命令
+4. 玩家决定信任方向
+5. 玩家恢复或隔离模块
+6. 信息与身份开始变化
+7. 协议逐步开放
+8. 玩家执行最终协议
+9. 显示结局页与结束音效
 
-约束：
-- 非结局节点必须有 `choices`。
-- 结局节点不能再定义 `choices`。
-- `start_node` 和所有 `next` 必须能在节点表中找到。
+## 6. 动态变化设计
 
-## 5. CLI 设计
+### 时间变化
+核心命令会消耗时间。
 
-### 命令
+### 模块变化
+恢复/隔离模块改变世界状态、文件可见性、异常完整度和身份绑定。
 
-- `uv run cligame play`
-- `uv run cligame play --story first_story`
-- `uv run cligame play --story-file <path>`
-- `uv run cligame play --mute`
-- `uv run cligame list-stories`
+### 文本变化
+部分文件会根据玩家的历史行为返回不同文本，例如恢复 audio 后，日志内容改变。
 
-### 结局行为
+### 身份变化
+`whoami` 会随着行为变化而改变：
+- 未认证
+- 绑定进行中
+- 门限适配通过
 
-到达结局后：
-- 渲染结局图案
-- 渲染结局文本
-- 默认播放共享结束音效
-- 等待用户按 Enter 后退出
+## 7. 协议执行
 
-## 6. 测试策略
+首版协议：
+- minimum_lockdown
+- identity_cutoff
+- forced_purge
+- threshold_reset
 
-### `tests/test_story_loader.py`
-- 校验内置故事可枚举。
-- 校验内置故事可成功加载。
-- 校验结局图案键被正确读取。
-- 校验非法跳转会触发错误。
+协议是否可执行由前置条件决定，而不是默认全部开放。
 
-### `tests/test_game_flow.py`
-- 模拟输入。
-- 覆盖非法输入重试。
-- 覆盖一条完整通关路径。
-- 确认结束页提示存在。
-- 确认会话结束后音频状态被清理。
+## 8. 测试重点
 
-## 7. 后续扩展方向
-
-- 为不同结局配置不同音频，而不再共用单一结束音效。
-- 接入更稳定的跨平台音频播放层。
-- 为故事增加元数据与章节机制。
-- 增加存档、回看、快速重开。
-- 支持从语料模板半自动生成故事草稿。
+- 命令是否推动任务阶段
+- 模块恢复是否改变文件内容
+- 协议是否能在满足条件后开放
+- CLI 入口与 `list-stories` 是否仍可用
+- 静音模式下流程仍可正常结束
