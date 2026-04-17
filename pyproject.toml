@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cligame"
+version = "0.1.0"
+description = "A lightweight terminal narrative game with branching stories."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "rich>=15.0.0",
+]
+
+[project.scripts]
+cligame = "cligame.cli:main"
+
+[dependency-groups]
+dev = [
+    "imageio-ffmpeg>=0.6.0",
+    "pytest>=9.0.3",
+    "ruff>=0.15.10",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cligame"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
