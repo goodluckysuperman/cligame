@@ -72,6 +72,7 @@ class GameState:
     binding_state: str = "无"
     threshold_state: str = "未知"
     current_task_key: str = "baseline"
+    completed_steps: set[str] = field(default_factory=set)
     tutorial_step: int = 0
     suggested_command: str = "status"
     onboarding_active: bool = True
@@ -89,6 +90,7 @@ class GameState:
     ending_body: str | None = None
     ending_art: str | None = None
     proactive_messages: list[str] = field(default_factory=list)
+    sidebar_message: str = "先确认事故总览。你现在最需要的不是勇气，是证据。"
 
     def minutes_remaining(self) -> int:
         return max(0, self.deadline_minutes - self.current_time_minutes)
