@@ -24,9 +24,10 @@ class FirstNightEngine:
     def initial_messages(self) -> list[str]:
         self.state.inventory.append("离线记录器")
         self.state.suggested_command = "status"
+        self.state.sidebar_message = "先确认事故总览。你现在最需要的不是勇气，是证据。"
         return [
             SENIOR_MESSAGES[0],
-            "前辈已将【离线记录器】交给你。它能保存当前证据快照，之后你会用它确认文件是否被改写。",
+            "你听见他离得很近，像真的站在你身后。可终端里没有任何接入记录显示这里还有第二个人。",
         ]
 
     def execute(self, raw_command: str) -> CommandResult:
@@ -101,7 +102,6 @@ class FirstNightEngine:
     def _help(self, _: str) -> CommandResult:
         self.state.suggested_command = "status"
         self.state.sidebar_message = "对，就是这样。先看清事故总览，再决定碰哪里。下一步输入 status。"
-        self._complete_step("查看事故总览", pending=True)
         return CommandResult(
             "【帮助】\n统一使用英文命令输入。\n可用命令：help status modules check task talk senior ls open scan relay reply whoami record records compare inventory restore isolate protocols execute <key> history"
         )
@@ -174,8 +174,7 @@ class FirstNightEngine:
             return CommandResult(f"{arg} 为空或尚未解锁。", consume_minutes=1)
         if arg == "/archive":
             self.state.suggested_command = "open /archive/incident_summary.txt"
-            self.state.sidebar_message = "很好，事故档案还在。先读事故摘要，不要先碰日志。你需要先知道系统认为发生了什么。"
-            self._complete_step("查看模块状态", pending=True)
+            self.state.sidebar_message = "很好，事故档案还在。先读事故摘要，不要先碰日志。你需要先知道系统承认了什么。"
             text = "/archive 目录内容：\n\n" + "\n".join(files) + "\n\n建议下一步：\n输入 open /archive/incident_summary.txt 阅读事故摘要。"
             return CommandResult(text, consume_minutes=1)
         return CommandResult("\n".join(files), consume_minutes=1)
@@ -270,15 +269,17 @@ class FirstNightEngine:
         current = self._read_file("archive/shift_06.log")
         if record == current:
             return CommandResult("记录与当前文件一致。")
+        self.state.tamper_confirmed = True
+        self.state.trusted_source = self.state.trusted_source or "evidence"
         self.state.sidebar_message = "看见了吗？它已经开始改写文本了。从这一刻起，你不能再只信终端显示出来的东西。"
-        return CommandResult("对比结果：当前文件与记录不一致。\n说明：档案内容已发生变化。", consume_minutes=1, notes=["你确认了一次文本篡改。"])
+        return CommandResult("对比结果：当前文件与记录不一致。\n说明：档案内容已发生变化。", consume_minutes=1, notes=["你确认了一次文本篡改。", "信任倾向：证据优先"])
 
     def _relay(self, _: str) -> CommandResult:
         self.state.suggested_command = "reply remote"
         self.state.sidebar_message = "远程支援终于冒头了。现在开始，你必须决定先信谁。"
         self._complete_step("查看远程通讯")
         messages = "【远程通讯】\n\n" + "\n\n".join(f"[{item.time_label}][{item.sender}]\n{item.body}" for item in RELAY_MESSAGES)
-        messages += "\n\n引导结束。\n从现在开始，你可以自行决定下一步操作。\n\n常见选择：\nopen /archive/shift_06.log\nrestore audio\nscan archive\nhelp"
+        messages += "\n\n引导结束。\n从现在开始，你可以自行决定下一步操作。\n\n常见选择：\nreply remote\nreply senior\nopen /archive/shift_06.log\nrestore audio\nscan archive\nhelp"
         return CommandResult(messages, consume_minutes=1)
 
     def _reply(self, arg: str) -> CommandResult:
@@ -287,13 +288,15 @@ class FirstNightEngine:
             self.state.trusted_source = "remote"
             self.state.anomaly_progress += 1
             self.state.suggested_command = "restore audio"
-            self.state.sidebar_message = "你选择先信远程。那就准备好承担更快的异常增长。"
-            return CommandResult("你向远程支援回复：收到。我会优先考虑恢复 audio。", consume_minutes=1, notes=["信任倾向：远程支援"])
+            self.state.sidebar_message = "你选择先信远程。那就准备好承担更快的异常增长。它会给你更多线索，也会更快接近你。"
+            self._complete_step("决定先信谁")
+            return CommandResult("你向远程支援回复：收到。我会优先考虑恢复 audio。", consume_minutes=1, notes=["信任倾向：远程支援", "路线变化：高风险高信息"])
         if "senior" in target or "前辈" in target:
             self.state.trusted_source = "senior"
             self.state.suggested_command = "open /archive/shift_06.log"
-            self.state.sidebar_message = "你选择先信旁侧低语。那就沿着证据链继续下去，别急着恢复高风险模块。"
-            return CommandResult("你向前辈确认：我会先建立证据链，不盲目修复。", consume_minutes=1, notes=["信任倾向：前辈"])
+            self.state.sidebar_message = "你选择先信我。那就沿着证据链继续下去。别急着恢复高风险模块，先确认谁在急着让你听见它。"
+            self._complete_step("决定先信谁")
+            return CommandResult("你向前辈确认：我会先建立证据链，不盲目修复。", consume_minutes=1, notes=["信任倾向：前辈", "路线变化：稳健证据链"])
         return CommandResult("通讯目标无响应。", consume_minutes=1)
 
     def _scan(self, arg: str) -> CommandResult:
@@ -305,12 +308,16 @@ class FirstNightEngine:
                 consume_minutes=1,
             )
         if arg == "archive":
+            self.state.sidebar_message = "档案不会立刻伤你，但它会慢慢让你怀疑自己看见的东西。"
             return CommandResult("【模块扫描：档案】\n\n当前状态：损坏\n恢复收益：可读取更多事故记录\n恢复风险：部分文档可能开始自我改写。", consume_minutes=1)
         if arg == "camera":
+            self.state.sidebar_message = "监控会给你最直观的证据，也会给对面一个看见你的机会。"
             return CommandResult("【模块扫描：监控】\n\n当前状态：离线\n恢复收益：获取零号收容室视觉证据\n恢复风险：观测可能是双向的。", consume_minutes=1)
         if arg == "lock":
+            self.state.sidebar_message = "门禁不是门。门禁只是决定谁有资格站到门的位置上。"
             return CommandResult("【模块扫描：门禁】\n\n当前状态：降级\n恢复收益：开放更高阶协议路径\n恢复风险：门限逻辑可能因此重写。", consume_minutes=1)
         if arg == "auth":
+            self.state.sidebar_message = "权限层最危险的地方不在于能做什么，而在于它会确认你是谁。"
             return CommandResult("【模块扫描：权限】\n\n当前状态：受限\n恢复收益：可接触更深权限文件\n恢复风险：系统将更明确地定义你是谁。", consume_minutes=1)
         return CommandResult("未知模块。", consume_minutes=1)
 
@@ -321,14 +328,20 @@ class FirstNightEngine:
         before_status = self.modules[arg]
         self.modules[arg] = ModuleStatus.RESTORED
         notes = [f"模块状态：{MODULES[arg].label} {before_status.value} -> 已恢复"]
+        self._complete_step("选择第一个处理模块")
+        self._complete_step("观察系统如何改变")
         if arg == "audio":
             self.state.anomaly_progress += 2
             notes.append("新文件解锁：/audio/residual_trace.txt")
-            self.state.sidebar_message = "你让它重新获得了广播能力。记住，这不是纯线索，而是一次交换。"
+            self.state.sidebar_message = "你让它重新获得了广播能力。记住，这不是纯线索，而是一笔交易。"
+            if self.state.trusted_source == "remote":
+                notes.append("远程路线推进：你更快靠近异常本身。")
         elif arg == "archive":
             self.state.insight_level += 1
             notes.append("档案索引恢复，后续可见内容将增多。")
             self.state.sidebar_message = "档案会告诉你更多过去，但过去未必愿意保持原样。"
+            if self.state.trusted_source == "senior":
+                notes.append("前辈路线推进：证据链更稳，但节奏更慢。")
         elif arg == "camera":
             self.state.insight_level += 1
             self.state.anomaly_progress += 1
@@ -358,11 +371,16 @@ class FirstNightEngine:
             return CommandResult("未知模块。", consume_minutes=1)
         before_status = self.modules[arg]
         self.modules[arg] = ModuleStatus.ISOLATED
+        self._complete_step("选择第一个处理模块")
+        self._complete_step("观察系统如何改变")
         notes = [f"模块状态：{MODULES[arg].label} {before_status.value} -> 已隔离"]
         if arg == "auth":
             self.state.binding_state = "无"
             notes.append("绑定状态已回落。")
-        self.state.suggested_command = "modules"
+        if self.state.current_task_key == "trust":
+            self.state.current_task_key = "protocol"
+            notes.append("任务阶段已进入：你必须开始考虑最终协议。")
+        self.state.suggested_command = "protocols"
         self.state.sidebar_message = "你选择了切断，而不是修复。记住，保守也许不是懦弱，而是另一种收容方式。"
         return CommandResult(module.isolate_summary, consume_minutes=module.isolate_minutes, notes=notes)
 
@@ -370,11 +388,27 @@ class FirstNightEngine:
         return CommandResult("背包：\n" + "\n".join(f"- {item}" for item in self.state.inventory))
 
     def _protocols(self, _: str) -> CommandResult:
+        self._complete_step("阅读可执行协议")
+        self.state.suggested_command = "execute minimum_lockdown"
+        if self.state.trusted_source == "senior":
+            self.state.sidebar_message = "如果你一路都在保存证据，那你现在还来得及切断自己，而不是切断设施。先看清哪条协议是在拿你换门。"
+        elif self.state.trusted_source == "remote":
+            self.state.sidebar_message = "远程会更希望你选一条能最快稳定表面的协议。但表面的稳定，有时只是把你钉进系统里。"
+        else:
+            self.state.sidebar_message = "你已经走到最后一层。现在不要信任何一句劝告，先看每条协议要求你牺牲什么。"
         lines = ["可执行协议概览："]
         for protocol in PROTOCOLS.values():
             available = self._protocol_available(protocol)
             marker = "可执行" if available else "未满足条件"
-            lines.append(f"- {protocol.key} / {protocol.label}：{marker}；{protocol.summary}")
+            if self.state.trusted_source == "senior" and protocol.key == "identity_cutoff":
+                guide = "旁侧低语：如果你还想留下一个能被世界记住的自己，就别选这条。"
+            elif self.state.trusted_source == "remote" and protocol.key == "forced_purge":
+                guide = "远端会喜欢这条。够快，够干净，也最少追问。"
+            elif protocol.key == "threshold_reset":
+                guide = "最接近真相的一条路，往往也是最接近成为门的一条路。"
+            else:
+                guide = "代价还没轮到你看见全部。"
+            lines.append(f"- {protocol.key} / {protocol.label}：{marker}；{protocol.summary}；{guide}")
         return CommandResult("\n".join(lines))
 
     def _execute_protocol(self, arg: str) -> CommandResult:
@@ -383,7 +417,14 @@ class FirstNightEngine:
             return CommandResult("未知协议。")
         if not self._protocol_available(protocol):
             return CommandResult("该协议条件尚未满足。")
+        if self.state.trusted_source == "senior":
+            self.state.sidebar_message = "这就是你最终愿意替今夜承担的形状。记住，我从来没有逼你，只是比你更早知道代价会落在哪。"
+        elif self.state.trusted_source == "remote":
+            self.state.sidebar_message = "你终于做了一个够快的决定。只希望你之后还能分清，这是你自己的选择，还是它替你选的。"
+        else:
+            self.state.sidebar_message = "很好。至少到了最后，你没有把判断交给任何人。现在承受它。"
         self.state.finished = True
+        self._complete_step("执行一项收容方案")
         self.state.ending_title = protocol.label
         self.state.ending_body = self._build_ending_body(protocol)
         self.state.ending_art = self._load_ending_art(self._protocol_art(protocol.key))
@@ -396,13 +437,16 @@ class FirstNightEngine:
 
     def _post_action_updates(self, command: str) -> list[str]:
         notes: list[str] = []
-        if self.state.minutes_remaining() <= 20 and self.state.sidebar_message.startswith("对，就是这样") is False:
+        if self.state.minutes_remaining() <= 20:
             self.state.sidebar_message = "剩余时间已经低于 20 分钟。现在开始，你不是在找完美答案，而是在避免最坏结果。"
+        if self.state.minutes_remaining() <= 10:
+            self.state.sidebar_message = "只剩最后十分钟了。接下来任何一步，都可能不再属于调查，而只属于牺牲。"
         if self.state.anomaly_progress >= 2 and self.state.operator_name == "未认证":
             self.state.operator_name = "林某"
             self.state.binding_state = "进行中"
             self.state.threshold_state = "待确认"
             notes.append("身份变化：系统开始用具体身份称呼你。")
+            self.state.sidebar_message = "你看见了吗？它开始直接叫你的名字了。我没有告诉过终端你是谁。"
         self._refresh_anomaly_labels()
         self._update_tutorial(command)
         if self.state.current_task_key == "protocol" and self.modules["auth"] == ModuleStatus.RESTORED and self.modules["lock"] == ModuleStatus.RESTORED:
@@ -438,7 +482,7 @@ class FirstNightEngine:
         if protocol.key == "forced_purge":
             return self.modules["auth"] == ModuleStatus.RESTORED or self.state.trusted_source == "remote"
         if protocol.key == "threshold_reset":
-            return self.modules["auth"] == ModuleStatus.RESTORED and self.modules["lock"] == ModuleStatus.RESTORED
+            return self.modules["auth"] == ModuleStatus.RESTORED and self.modules["lock"] == ModuleStatus.RESTORED and (self.state.trusted_source == "senior" or self.state.tamper_confirmed)
         return False
 
     def _protocol_art(self, key: str) -> str:
@@ -457,11 +501,14 @@ class FirstNightEngine:
 
     def _build_ending_body(self, protocol: ProtocolDefinition) -> str:
         restored = [MODULES[key].label for key, status in self.modules.items() if status == ModuleStatus.RESTORED]
+        trust = self.state.trusted_source or "未明确"
+        if trust == "evidence":
+            trust = "证据优先"
         return (
             f"{protocol.ending_text}\n\n"
             f"代价：{protocol.cost_text}\n\n"
             f"结局总结：\n"
-            f"- 你信任的对象：{self.state.trusted_source or '尚未明确表态'}\n"
+            f"- 你信任的对象：{trust}\n"
             f"- 已恢复模块：{', '.join(restored) if restored else '无'}\n"
             f"- 已保存记录：{len(self.state.records)}\n"
             f"- 最终绑定状态：{self.state.binding_state}"
@@ -489,6 +536,5 @@ class FirstNightEngine:
             content += "\n\n附注：异常正在学会使用你的阅读顺序。"
         return content
 
-    def _complete_step(self, step: str, pending: bool = False) -> None:
-        if not pending:
-            self.state.completed_steps.add(step)
+    def _complete_step(self, step: str) -> None:
+        self.state.completed_steps.add(step)

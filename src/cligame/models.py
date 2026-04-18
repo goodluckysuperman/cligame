@@ -84,6 +84,7 @@ class GameState:
     insight_level: int = 0
     senior_stage: int = 0
     auth_trace_unlocked: bool = False
+    tamper_confirmed: bool = False
     protocols_unlocked: set[str] = field(default_factory=set)
     finished: bool = False
     ending_title: str | None = None

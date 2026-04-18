@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import time
 
 from rich.console import Console
 
@@ -24,6 +25,26 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _run_title_sequence(renderer: StoryRenderer) -> None:
+    frames = [
+        "值守权限校验中……",
+        "门限协议载入中……",
+        "零号收容室事故终端已联通。",
+    ]
+    for frame in frames:
+        renderer.render_title_frame(frame)
+        time.sleep(0.35)
+    renderer.render_main_menu()
+
+
+def _show_background_or_help(renderer: StoryRenderer, mode: str) -> None:
+    if mode == "2":
+        renderer.render_background_intro()
+    elif mode == "3":
+        renderer.render_help_page()
+        renderer.console.input("[dim]按 Enter 返回菜单...[/dim]")
+
+
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
@@ -38,6 +59,16 @@ def main() -> int:
     audio_player = create_audio_player(enabled=not args.mute)
 
     try:
+        while True:
+            _run_title_sequence(renderer)
+            choice = console.input("[bold cyan]>[/bold cyan] ").strip() or "1"
+            if choice == "1":
+                break
+            if choice == "4":
+                return 0
+            _show_background_or_help(renderer, choice)
+
+        renderer.render_background_intro()
         renderer.render_boot_screen(engine.state, engine.modules)
         renderer.render_intro_messages(engine.initial_messages())
         if not args.mute:
@@ -47,7 +78,12 @@ def main() -> int:
             renderer.render_prompt(engine.state)
             raw_command = input("> ")
             result = engine.execute(raw_command)
-            renderer.render_output(result.output, engine.last_change_summary)
+            if raw_command.strip() == "protocols":
+                renderer.render_protocol_walkway(engine.state, result.output)
+                if engine.last_change_summary is not None:
+                    renderer.render_output("", engine.last_change_summary)
+            else:
+                renderer.render_output(result.output, engine.last_change_summary)
 
         if not args.mute:
             audio_player.play_ending(ENDING_TRACK)

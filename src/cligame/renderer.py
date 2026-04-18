@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from rich.align import Align
 from rich.columns import Columns
 from rich.console import Console, Group
 from rich.panel import Panel
@@ -14,6 +15,48 @@ from .models import ChangeSummary, GameState
 class StoryRenderer:
     def __init__(self, console: Console | None = None) -> None:
         self.console = console or Console()
+
+    def render_title_frame(self, subtitle: str) -> None:
+        title = Text("门限协议", style="bold magenta")
+        en = Text("Threshold Protocol", style="dim cyan")
+        frame = Panel(
+            Align.center(Group(title, en, Text(subtitle, style="yellow"))),
+            border_style="magenta",
+            title="零号收容室 / Chamber-0",
+        )
+        self.console.clear()
+        self.console.print(frame)
+
+    def render_main_menu(self) -> None:
+        table = Table(show_header=False, box=None, padding=(0, 1))
+        table.add_column(style="cyan", width=3)
+        table.add_column(style="white")
+        table.add_row("[1]", "开始值守")
+        table.add_row("[2]", "背景设定")
+        table.add_row("[3]", "命令帮助")
+        table.add_row("[4]", "退出")
+        self.console.print(Panel(table, border_style="yellow", title="值守菜单"))
+
+    def render_background_intro(self) -> None:
+        scenes = [
+            "你不是这座设施最资深的人。只是今夜，轮到你接过终端。",
+            "零号收容室平时不需要你理解它。你只需要在规程里活到天亮。",
+            "但今夜 04:00，系统会自动同步本夜日志、音频与认证记录。",
+            "而某个一直像前辈一样出现在你旁边的人，已经在等你开机。",
+        ]
+        for idx, scene in enumerate(scenes, start=1):
+            self.console.clear()
+            self.console.print(Panel(scene, border_style="magenta", title=f"引入 {idx}/4"))
+            self.console.input("[dim]按 Enter 继续...[/dim]")
+
+    def render_help_page(self) -> None:
+        help_text = (
+            "统一使用英文命令输入。\n\n"
+            "开局重点命令：\n"
+            "status / modules / ls / open / scan / relay / record / compare / restore / isolate / protocols / execute\n\n"
+            "第一夜会由一个像前辈的神秘人一直给你 next 建议。"
+        )
+        self.console.print(Panel(help_text, border_style="cyan", title="命令帮助"))
 
     def render_boot_screen(self, state: GameState, modules: dict[str, object]) -> None:
         left = Group(
@@ -41,6 +84,15 @@ class StoryRenderer:
             body.append(self._build_change_panel(change_summary))
         self.console.print(Group(*body))
         self.console.print()
+
+    def render_protocol_walkway(self, state: GameState, protocol_lines: str) -> None:
+        guide = Panel(
+            f"『{state.sidebar_message}』\n\n现在不是在点菜单，而是在决定自己愿意被写成什么。",
+            border_style="yellow",
+            title="旁侧低语",
+        )
+        body = Panel(protocol_lines, border_style="magenta", title="最终抉择走廊")
+        self.console.print(Columns([body, guide], equal=False, expand=True))
 
     def render_ending_screen(self, title: str, art: str, body: str) -> None:
         self.console.print(Rule(title, style="magenta"))
@@ -86,6 +138,8 @@ class StoryRenderer:
 
     def _build_sidebar_panel(self, state: GameState) -> Panel:
         trust = state.trusted_source or "未明确"
+        if trust == "evidence":
+            trust = "证据优先"
         records = len(state.records)
         text = (
             f"『{state.sidebar_message}』\n\n"
@@ -95,7 +149,7 @@ class StoryRenderer:
             f"信任倾向：{trust}\n"
             f"已保存记录：{records}"
         )
-        return Panel(text, border_style="yellow", title="旁侧低语")
+        return Panel(text, border_style="yellow", title="值守前辈？")
 
     def _build_change_panel(self, change_summary: ChangeSummary) -> Panel:
         lines = [
